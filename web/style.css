@@ -1,0 +1,228 @@
+/* ============================================================
+ * 奶龙桌宠 · 网页版样式
+ * 简洁桌面风：浅色柔和渐变 + 微弱光斑，让奶龙成为视觉焦点
+ * ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* 关键修复：防止组件自身的 display 规则覆盖 hidden 属性（默认 UA 样式优先级不够） */
+[hidden] { display: none !important; }
+
+html, body { height: 100%; }
+
+body {
+  overflow: hidden;
+  height: 100dvh;
+  font-family: Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background:
+    radial-gradient(1100px 700px at 88% -8%, rgba(255, 213, 156, .38), transparent 62%),
+    radial-gradient(900px 650px at -8% 108%, rgba(173, 210, 255, .42), transparent 60%),
+    linear-gradient(168deg, #faf7f1 0%, #f0f4f9 52%, #e9f0f7 100%);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- 背景光斑（微弱漂浮，营造桌面氛围） ---- */
+.blob {
+  position: fixed; border-radius: 50%;
+  filter: blur(70px); opacity: .55;
+  pointer-events: none; z-index: 0;
+}
+.blob.b1 {
+  width: 340px; height: 340px; left: 8%; top: 16%;
+  background: radial-gradient(circle, rgba(255, 236, 189, .8), transparent 70%);
+  animation: drift 16s ease-in-out infinite alternate;
+}
+.blob.b2 {
+  width: 280px; height: 280px; right: 10%; bottom: 18%;
+  background: radial-gradient(circle, rgba(196, 224, 255, .85), transparent 70%);
+  animation: drift 19s ease-in-out infinite alternate-reverse;
+}
+.blob.b3 {
+  width: 200px; height: 200px; left: 55%; top: 8%;
+  background: radial-gradient(circle, rgba(215, 255, 232, .7), transparent 70%);
+  animation: drift 22s ease-in-out infinite alternate;
+}
+@keyframes drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(42px, 30px, 0) scale(1.12); }
+}
+
+/* ---- 奶龙本体 ----
+ * 尺寸由 app.js 依据素材比例写入（宽 180px，高约 249.5px）。
+ * 位置与挤压形变统一走 transform，交给合成器，保证 60fps 丝滑。 */
+#pet {
+  position: fixed; left: 0; top: 0;
+  width: 180px; height: 250px;
+  transform-origin: 50% 50%;
+  will-change: transform;
+  cursor: grab;
+  touch-action: none;           /* 移动端拖动时禁止页面滚动手势 */
+  z-index: 10;
+}
+#pet.grabbing { cursor: grabbing; }
+
+/* 四套动画帧：默认全部隐藏，.show 的那套可见。
+ * width/height 强制统一到 laugh 的渲染框（与桌面版 X/Y 独立缩放对齐一致）。 */
+#pet img {
+  position: absolute; left: 0; top: 0;
+  width: 100%; height: 100%;
+  display: none;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 6px 10px rgba(70, 55, 25, .22));
+}
+#pet img.show { display: block; }
+
+/* 素材加载失败时的占位色块（对应桌面版的彩色圆形回退） */
+#fallback {
+  position: absolute; left: 50%; top: 50%;
+  width: 120px; height: 170px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  display: none;
+}
+
+/* ---- 气泡（打招呼 / 疲惫提醒） ---- */
+.bubble {
+  position: fixed; left: 0; top: 0;
+  max-width: calc(100vw - 16px);
+  background: #fff;
+  border: 1.5px solid #b9b9b9;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 15px; line-height: 22px;
+  color: #282828;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .10);
+  will-change: transform;
+  z-index: 20;
+}
+#tired-bubble { font-size: 14px; color: #464646; }
+
+/* ---- 右下角"托盘"按钮 ---- */
+#tray-btn {
+  position: fixed; right: 18px; bottom: 18px;
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #ffe9b8;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .18);
+  cursor: pointer;
+  overflow: hidden;
+  z-index: 90;
+  animation: bob 2.4s ease-in-out infinite;
+  transition: transform .15s ease;
+}
+#tray-btn:hover { transform: scale(1.08); }
+#tray-btn img {
+  width: 130%; height: 130%;
+  object-fit: cover;
+  object-position: 46% 10%;   /* 取奶龙头部特写 */
+  pointer-events: none;
+}
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-5px); }
+}
+
+/* ---- 右键菜单（对应桌面版原生菜单） ---- */
+#menu {
+  position: fixed; left: 0; top: 0;
+  min-width: 216px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .16);
+  padding: 6px;
+  z-index: 100;
+  user-select: none;
+}
+#menu .mi {
+  padding: 7px 12px;
+  font-size: 14px; line-height: 1.35;
+  border-radius: 6px;
+  color: #222;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#menu .mi.info { color: #9a9a9a; cursor: default; }  /* 纯展示项（对应 MF_GRAYED） */
+#menu .mi.act:hover { background: #f2f6fa; }
+#menu .sep { height: 1px; background: #ececec; margin: 5px 8px; }
+
+/* ---- 操作提示 ---- */
+#hint {
+  position: fixed; left: 50%; bottom: 18px;
+  transform: translateX(-50%);
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .72);
+  border: 1px solid rgba(0, 0, 0, .06);
+  backdrop-filter: blur(6px);
+  font-size: 12.5px; color: #6b6b6b;
+  pointer-events: none;
+  z-index: 5;
+  transition: opacity .8s ease;
+}
+#hint.gone { opacity: 0; }
+
+/* ---- "奶龙下班"界面 ---- */
+#closed-overlay {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(247, 245, 240, .82);
+  backdrop-filter: blur(8px);
+  z-index: 200;
+}
+#closed-overlay .card {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 14px;
+  padding: 38px 46px;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .14);
+  text-align: center;
+}
+#closed-overlay img { width: 120px; filter: drop-shadow(0 8px 14px rgba(70,55,25,.25)); }
+#closed-overlay h1 { font-size: 22px; color: #333; }
+#closed-overlay p  { font-size: 14px; color: #888; line-height: 1.8; }
+#revive-btn {
+  margin-top: 6px;
+  padding: 10px 30px;
+  font-size: 15px;
+  color: #fff;
+  background: linear-gradient(135deg, #ffb23e, #ff8c1a);
+  border: none; border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(255, 140, 26, .35);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+#revive-btn:hover { transform: translateY(-2px); box-shadow: 0 9px 20px rgba(255,140,26,.45); }
+
+/* ---- 素材加载页 ---- */
+#loading {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 20px;
+  z-index: 300;
+  background:
+    radial-gradient(900px 600px at 85% -10%, rgba(255, 213, 156, .35), transparent 60%),
+    linear-gradient(168deg, #faf7f1, #edf2f8);
+  transition: opacity .5s ease;
+}
+#loading.done { opacity: 0; pointer-events: none; }
+#loading .mascot { width: 128px; animation: bob 1.6s ease-in-out infinite; }
+#loading .bar {
+  width: 240px; height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .08);
+  overflow: hidden;
+}
+#loading .fill {
+  width: 0%; height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffb23e, #ff8c1a);
+  transition: width .2s ease;
+}
+#loading .txt { font-size: 13px; color: #8a8a8a; }

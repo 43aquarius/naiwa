@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>奶龙桌宠 · 网页版</title>
+  <link rel="icon" href="../assets/idle/idle_01.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 背景光斑装饰（简洁桌面风） -->
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  <div class="blob b3"></div>
+
+  <!-- 素材加载页：174 帧全部就绪后才进入宠物场景 -->
+  <div id="loading">
+    <img class="mascot" src="../assets/idle/idle_01.png" alt="奶龙">
+    <div class="bar"><div class="fill" id="load-fill"></div></div>
+    <div class="txt" id="load-txt">正在加载奶龙素材… 0 / 174</div>
+  </div>
+
+  <!-- 奶龙本体：四个 <img> 分别对应四套动画，按状态切换显示 -->
+  <div id="pet" title="奶龙">
+    <img id="img-idle"  alt="">
+    <img id="img-smile" alt="">
+    <img id="img-laugh" alt="">
+    <img id="img-cry"   alt="">
+    <!-- 素材加载失败时的占位色块（对应桌面版的彩色圆形回退） -->
+    <div id="fallback"></div>
+  </div>
+
+  <!-- 打招呼气泡（启动 / 页面重新可见时显示 20 秒） -->
+  <div id="greet-bubble" class="bubble" hidden></div>
+  <!-- 疲惫气泡（连续使用 60 分钟） -->
+  <div id="tired-bubble" class="bubble" hidden>Take a break!</div>
+
+  <!-- 最小化到"托盘"：右下角悬浮奶龙按钮，点击恢复 -->
+  <button id="tray-btn" title="奶龙桌面宠物（点击恢复）" hidden>
+    <img src="../assets/idle/idle_01.png" alt="奶龙">
+  </button>
+
+  <!-- 右键菜单（对应桌面版原生菜单） -->
+  <div id="menu" hidden></div>
+
+  <!-- 操作提示（自动淡出，不打扰） -->
+  <div id="hint">单击微笑 · 1.5 秒内连点 5 次大笑 · 按住快速甩动 · 右键打开菜单</div>
+
+  <!-- "奶龙下班"界面（对应桌面版关闭程序 / Escape 退出） -->
+  <div id="closed-overlay" hidden>
+    <div class="card">
+      <img src="../assets/idle/idle_01.png" alt="奶龙">
+      <h1>奶龙已经下班啦</h1>
+      <p>奶龙回去休息了，本次陪伴时长已经记录。<br>想它了就随时把它叫回来。</p>
+      <button id="revive-btn">把奶龙叫回来</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
