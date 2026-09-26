@@ -1,0 +1,41 @@
+﻿cmake_minimum_required(VERSION 3.16)
+project(nailong-pet LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# If SFML is not found automatically, point to your installation, e.g.:
+#   cmake -DSFML_DIR="C:/SFML-2.6.2/lib/cmake/SFML" ..
+#   cmake -DSFML_DIR="C:/vcpkg/installed/x64-windows/share/sfml" ..
+find_package(SFML 3 COMPONENTS Graphics Audio REQUIRED)
+
+add_executable(nailong-pet src/main.cpp)
+
+# 将子系统设为 Windows，运行时不弹出黑色控制台窗口；
+# mainCRTStartup 保持 main() 作为入口，无需改为 WinMain
+if(MSVC)
+    set_target_properties(nailong-pet PROPERTIES
+        LINK_FLAGS "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
+endif()
+
+# 告知 MSVC 源文件编码为 UTF-8，避免中文注释触发 C4819 警告
+if(MSVC)
+    target_compile_options(nailong-pet PRIVATE /utf-8)
+endif()
+
+target_link_libraries(nailong-pet PRIVATE
+    SFML::Graphics
+    SFML::Audio
+    Shell32     # Shell_NotifyIcon（系统托盘）
+    Winhttp     # WinHttpOpen 等（IP 属地查询）
+)
+
+# Copy SFML DLLs next to the executable (requires CMake >= 3.21)
+if(WIN32 AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.21")
+    add_custom_command(TARGET nailong-pet POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:nailong-pet>
+            $<TARGET_FILE_DIR:nailong-pet>
+        COMMAND_EXPAND_LISTS
+    )
+endif()
