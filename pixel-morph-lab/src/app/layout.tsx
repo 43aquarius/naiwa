@@ -28,22 +28,22 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pixel Morph Lab — Tutorial Series",
+  title: "像素变换实验室 · Pixel Morph Lab",
   description:
-    "A hands-on tutorial series on pixel sorting, image morphing and canvas image processing. Each chapter ships with an embedded runnable demo.",
+    "一个简单的图片像素变换工具，默认演示 smile_01 → smile_06 的转换，也支持自定义图片上传。",
   keywords: [
+    "像素变换",
+    "图片变换",
     "pixel sort",
     "image morph",
     "canvas",
-    "tutorial",
-    "developer blog",
     "Next.js",
   ],
-  authors: [{ name: "Pixel Morph Lab" }],
+  authors: [{ name: "像素变换实验室" }],
   icons: { icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg" },
   openGraph: {
-    title: "Pixel Morph Lab",
-    description: "Hands-on tutorial series on pixel sorting and image morphing.",
+    title: "像素变换实验室",
+    description: "简单的图片像素变换工具，默认演示 smile_01 → smile_06。",
     type: "website",
   },
 };

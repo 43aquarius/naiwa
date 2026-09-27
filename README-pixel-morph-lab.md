@@ -1,60 +1,45 @@
-# Pixel Morph Lab — Tutorial Series
+# 像素变换实验室 · Pixel Morph Lab
 
-A hands-on tutorial-series developer blog that ships an **embedded runnable demo** of pixel sorting, image morphing, and glitch art. The default canvas morphs `smile_01.png` into `smile_06.png` (both included), and any user can upload their own images to try the algorithm on real content.
+一个简单的图片像素变换工具，默认演示 `smile_01.png` → `smile_06.png` 的转换，也支持自定义图片上传。
 
-> Branch **`pixel-morph-lab`** — a self-contained addition that does **not** touch `main` or any other existing branch. It adds a new project under `pixel-morph-lab/` and a standalone single-file replica at the repo root.
+> 分支 **`pixel-morph-lab`** —— 独立新增项目，不修改 main 或其他已有分支。
 
-## Deliverables
+## 交付物
 
-| Path | What it is |
-|------|------------|
-| `pixel-morph-lab/` | Full Next.js 16 + TypeScript + Tailwind 4 + shadcn/ui source tree |
-| `pixel-morph-lab/standalone.html` | Self-contained single-file replica (231 KB) |
-| `pixel-morph-lab-standalone.html` | Same standalone HTML at the repo root for easy discovery |
-| `pixel-morph-lab/public/demo/smile_01.png` | Calm face — the default **source** image |
-| `pixel-morph-lab/public/demo/smile_06.png` | Extreme grin — the default **target** image |
-| `pixel-morph-lab/upload/` | Same two PNGs mirrored (matches the IM upload convention) |
-| `pixel-morph-lab/worklog.md` | Build log with Task ID and stage summary |
+| 路径 | 说明 |
+|------|------|
+| `pixel-morph-lab/` | Next.js 16 + TypeScript + Tailwind 4 + shadcn/ui 完整源码 |
+| `pixel-morph-lab/standalone.html` | 单文件 HTML 复刻版（约 166 KB，自包含） |
+| `pixel-morph-lab-standalone.html` | 仓库根目录的同款单文件 HTML，方便直接打开 |
+| `pixel-morph-lab/public/demo/smile_01.png` | 默认源图（平静的笑脸） |
+| `pixel-morph-lab/public/demo/smile_06.png` | 默认目标图（夸张的笑脸） |
 
-## Features
+## 功能
 
-### Core pixel transformation
-- **Pixel Sort** — sort rows or columns by brightness / hue / saturation / R / G / B with a threshold band and an intensity lerp (multi-pass).
-- **Morph** — linear or ease-in-out cross-dissolve between two same-sized RGBA buffers.
-- **Glitch** — mulberry32-seeded block-shift glitch with configurable block count and amount.
-- **Pipeline** — compose sort → morph → glitch in one render path.
-- **Custom upload** — drag in your own PNG/JPG for both source and target; target auto-resized to match source.
-- **PNG export** — one-click download of the rendered canvas at full (up to 400 px) resolution.
+进入页面后立即就是默认的转换示例（smile_01 → smile_06，形变 50%）。可切换四种模式：
 
-### Tutorial-series developer blog
-- **Hero section** — featured series banner + "new chapters this week" callouts.
-- **Series Library** — grid of 4 series cards with completion percentage.
-- **Series Page** — chapter list + an interactive node-graph prerequisite map (hover to highlight edges).
-- **Chapter pages** — prose serif body, embedded runnable code playground, and per-chapter comments.
-- **Sticky TOC** — highlights the active heading as you scroll, with `IntersectionObserver`.
-- **Progress checklist** — auto-marks chapters complete once you scroll past 80% of them, with a gold-tick + confetti + soft chime celebration.
-- **Diff widget** — animates from before-code to after-code with LCS-based diff highlighting.
-- **Code playground** — textarea + Run button, sandboxed via `new Function(...)` with intercepted `console.log`.
-- **Per-chapter comments** — like buttons + nested replies, session-only.
-- **Light / dim mode** — toggle from the header; persists in `localStorage`.
+- **像素排序** — 按行/列排序像素（亮度 / 色相 / 饱和度 / RGB），带阈值带与多趟强度 lerp
+- **形变** — 两张图交叉溶解，线性或缓入缓出
+- **故障** — 种子化的块位移故障效果
+- **流水线** — 排序 → 形变 → 故障 串行执行
 
-## Tech stack
-- Next.js 16 (App Router) · TypeScript 5 · Tailwind CSS 4 · shadcn/ui (New York)
-- Newsreader (prose serif) · JetBrains Mono (code) · Geist (UI sans)
-- next-themes for light/dark
-- Canvas 2D `getImageData` / `putImageData` for per-pixel work
-- IntersectionObserver for scroll-driven UI
+其他能力：
+- 源图 / 目标图均可上传自定义 PNG / JPG（目标图自动按源图尺寸缩放）
+- 一键导出当前画布为 PNG
+- 亮 / 暗模式切换（localStorage 记忆）
+- 自动运行开关（参数变化即时刷新）
 
-## Running the Next.js app
+## 运行
+
+### Next.js 版本
 ```bash
 cd pixel-morph-lab
 bun install
-bun run dev        # serves on http://localhost:3000
-bun run lint       # 0 errors, 0 warnings
+bun run dev     # http://localhost:3000
 ```
 
-## Running the standalone single-file HTML
-Just open `pixel-morph-lab-standalone.html` (or `pixel-morph-lab/standalone.html`) in any modern browser. No build step, no server, no network requests — both smile images are inlined as base64 data URLs.
+### 单文件 HTML 版本
+直接双击 `pixel-morph-lab-standalone.html` 或 `pixel-morph-lab/standalone.html` 用任意现代浏览器打开，无构建、无服务器、无网络请求（两张默认图已 base64 内联）。
 
-## License
-MIT.
+## 许可证
+MIT

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Shuffle, Download, Loader2, Sparkles } from "lucide-react";
+import { Upload, Download, Loader2, Shuffle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -23,23 +23,15 @@ import {
   type RGBABuffer,
   type SortDirection,
   type SortMetric,
-  type PixelSortParams,
-  type MorphParams,
-  type GlitchParams,
 } from "@/lib/pixel-utils";
 
 const DEFAULT_SRC = "/demo/smile_01.png";
 const DEFAULT_DST = "/demo/smile_06.png";
-const MAX_DIM = 400; // demo max edge
+const MAX_DIM = 400;
 
 type Mode = "sort" | "morph" | "glitch" | "pipeline";
 
-interface PixelTransformDemoProps {
-  /** Allows the parent (chapter card) to know when to celebrate */
-  onInteracted?: () => void;
-}
-
-export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
+export function PixelTransformDemo() {
   const srcImgRef = React.useRef<HTMLImageElement | null>(null);
   const dstImgRef = React.useRef<HTMLImageElement | null>(null);
   const srcBufRef = React.useRef<RGBABuffer | null>(null);
@@ -55,30 +47,30 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
   const [srcName, setSrcName] = React.useState("smile_01.png");
   const [dstName, setDstName] = React.useState("smile_06.png");
 
-  // Sort params
+  // 排序参数
   const [sortDir, setSortDir] = React.useState<SortDirection>("horizontal");
   const [sortMetric, setSortMetric] = React.useState<SortMetric>("brightness");
   const [sortThreshold, setSortThreshold] = React.useState(128);
   const [sortThresholdMode, setSortThresholdMode] = React.useState<"above" | "below">("above");
   const [sortIntensity, setSortIntensity] = React.useState(0.8);
 
-  // Morph params
+  // 形变参数
   const [morphAmount, setMorphAmount] = React.useState(0.5);
   const [morphEase, setMorphEase] = React.useState<"linear" | "easeinout">("easeinout");
 
-  // Glitch params
+  // 故障参数
   const [glitchAmount, setGlitchAmount] = React.useState(0.5);
   const [glitchBlocks, setGlitchBlocks] = React.useState(12);
   const [glitchSeed, setGlitchSeed] = React.useState(42);
 
-  // Pipeline (sort + morph + glitch chained)
+  // 流水线
   const [pipelineSortFirst, setPipelineSortFirst] = React.useState(true);
 
   const [autoRun, setAutoRun] = React.useState(true);
   const [running, setRunning] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // --- Load default images on mount ---
+  // 默认加载
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -92,7 +84,6 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
         dstImgRef.current = dst;
         srcBufRef.current = imageToBuffer(src, MAX_DIM);
         dstBufRef.current = imageToBuffer(dst, MAX_DIM);
-        // Resize destination to match source dimensions for morphing
         if (
           srcBufRef.current.width !== dstBufRef.current.width ||
           srcBufRef.current.height !== dstBufRef.current.height
@@ -105,7 +96,7 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
         }
         render();
       } catch (e: any) {
-        setError("Failed to load default images: " + (e?.message ?? e));
+        setError("加载默认图片失败：" + (e?.message ?? e));
       }
     })();
     return () => {
@@ -113,7 +104,6 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
     };
   }, []);
 
-  // --- Re-render whenever parameters change (auto-run) ---
   React.useEffect(() => {
     if (autoRun) render();
   }, [
@@ -151,7 +141,7 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
         });
       } else if (mode === "morph") {
         if (!dst) {
-          setError("Target image not loaded yet");
+          setError("目标图片尚未加载");
           setRunning(false);
           return;
         }
@@ -163,9 +153,8 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
           seed: glitchSeed,
         });
       } else {
-        // pipeline: sort -> morph -> glitch (or morph -> sort if user swaps)
         if (!dst) {
-          setError("Target image not loaded yet");
+          setError("目标图片尚未加载");
           setRunning(false);
           return;
         }
@@ -206,7 +195,6 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
       .then((img) => {
         srcImgRef.current = img;
         srcBufRef.current = imageToBuffer(img, MAX_DIM);
-        // Resize dst to match src
         if (dstBufRef.current) {
           dstBufRef.current = resizeBuffer(
             imageToBuffer(dstImgRef.current ?? img, MAX_DIM),
@@ -215,9 +203,8 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
           );
         }
         render();
-        onInteracted?.();
       })
-      .catch((e) => setError("Failed to load source image: " + (e?.message ?? e)));
+      .catch((e) => setError("加载源图片失败：" + (e?.message ?? e)));
   }
 
   function onUploadDst(file: File) {
@@ -228,7 +215,6 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
       .then((img) => {
         dstImgRef.current = img;
         const base = imageToBuffer(img, MAX_DIM);
-        // Match dimensions to source
         if (srcBufRef.current) {
           dstBufRef.current = resizeBuffer(
             base,
@@ -239,9 +225,8 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
           dstBufRef.current = base;
         }
         render();
-        onInteracted?.();
       })
-      .catch((e) => setError("Failed to load target image: " + (e?.message ?? e)));
+      .catch((e) => setError("加载目标图片失败：" + (e?.message ?? e)));
   }
 
   function downloadCanvas() {
@@ -252,22 +237,20 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `pixel-morph-${Date.now()}.png`;
+      a.download = `像素变换-${Date.now()}.png`;
       a.click();
       URL.revokeObjectURL(url);
     }, "image/png");
-    onInteracted?.();
   }
 
   function shuffleSeed() {
     setGlitchSeed(Math.floor(Math.random() * 99999));
-    onInteracted?.();
   }
 
   return (
     <div className="pml-card p-4 md:p-6">
       <div className="flex flex-col lg:flex-row gap-6">
-        {/* Canvas */}
+        {/* 画布 */}
         <div className="flex-1">
           <div
             className="relative w-full aspect-square rounded-lg overflow-hidden"
@@ -283,29 +266,26 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
             />
             {running && (
               <div className="absolute top-2 right-2 text-xs px-2 py-1 rounded-full bg-black/70 text-white flex items-center gap-1">
-                <Loader2 className="h-3 w-3 animate-spin" /> processing
+                <Loader2 className="h-3 w-3 animate-spin" /> 处理中
               </div>
             )}
           </div>
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <Button
-              onClick={() => {
-                render();
-                onInteracted?.();
-              }}
+              onClick={() => render()}
               size="sm"
               style={{
                 background: "var(--pml-accent)",
                 color: "var(--pml-accent-fg)",
               }}
             >
-              <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Run transform
+              <Shuffle className="h-3.5 w-3.5 mr-1.5" /> 重新渲染
             </Button>
             <Button onClick={downloadCanvas} size="sm" variant="outline">
-              <Download className="h-3.5 w-3.5 mr-1.5" /> Download PNG
+              <Download className="h-3.5 w-3.5 mr-1.5" /> 下载 PNG
             </Button>
             <div className="flex items-center gap-2 ml-auto">
-              <span className="text-xs text-[var(--pml-prose-muted)]">auto-run</span>
+              <span className="text-xs text-[var(--pml-prose-muted)]">自动运行</span>
               <Switch checked={autoRun} onCheckedChange={setAutoRun} />
             </div>
           </div>
@@ -316,27 +296,27 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
           )}
         </div>
 
-        {/* Controls */}
+        {/* 控件 */}
         <div className="lg:w-[340px] flex flex-col gap-4">
           <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
             <TabsList className="grid grid-cols-4 w-full">
-              <TabsTrigger value="sort">Sort</TabsTrigger>
-              <TabsTrigger value="morph">Morph</TabsTrigger>
-              <TabsTrigger value="glitch">Glitch</TabsTrigger>
-              <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
+              <TabsTrigger value="sort">像素排序</TabsTrigger>
+              <TabsTrigger value="morph">形变</TabsTrigger>
+              <TabsTrigger value="glitch">故障</TabsTrigger>
+              <TabsTrigger value="pipeline">流水线</TabsTrigger>
             </TabsList>
           </Tabs>
 
-          {/* Image inputs */}
+          {/* 图片输入 */}
           <div className="grid grid-cols-2 gap-2">
             <ImageBox
-              label="Source"
+              label="源图"
               name={srcName}
               url={srcUrl}
               onPick={() => srcInputRef.current?.click()}
             />
             <ImageBox
-              label="Target"
+              label="目标图"
               name={dstName}
               url={dstUrl}
               onPick={() => dstInputRef.current?.click()}
@@ -363,44 +343,43 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
             />
           </div>
           <p className="text-[11px] text-[var(--pml-prose-muted)] -mt-2">
-            Default: smile_01 → smile_06. Upload your own PNG/JPG to test the
-            algorithm on any image.
+            默认示例为 smile_01 → smile_06，点击上方卡片可上传自定义 PNG / JPG。
           </p>
 
-          {/* Sort controls */}
+          {/* 排序控件 */}
           {(mode === "sort" || mode === "pipeline") && (
             <div className="space-y-3 pml-card p-3">
-              <SectionLabel>Pixel Sort</SectionLabel>
+              <SectionLabel>像素排序</SectionLabel>
               <Row>
-                <label className="text-xs text-[var(--pml-prose-muted)]">Direction</label>
+                <label className="text-xs text-[var(--pml-prose-muted)]">方向</label>
                 <Select value={sortDir} onValueChange={(v) => setSortDir(v as SortDirection)}>
                   <SelectTrigger className="h-8 w-32 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="horizontal">Horizontal</SelectItem>
-                    <SelectItem value="vertical">Vertical</SelectItem>
+                    <SelectItem value="horizontal">水平</SelectItem>
+                    <SelectItem value="vertical">垂直</SelectItem>
                   </SelectContent>
                 </Select>
               </Row>
               <Row>
-                <label className="text-xs text-[var(--pml-prose-muted)]">Metric</label>
+                <label className="text-xs text-[var(--pml-prose-muted)]">指标</label>
                 <Select value={sortMetric} onValueChange={(v) => setSortMetric(v as SortMetric)}>
                   <SelectTrigger className="h-8 w-32 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="brightness">Brightness</SelectItem>
-                    <SelectItem value="hue">Hue</SelectItem>
-                    <SelectItem value="saturation">Saturation</SelectItem>
-                    <SelectItem value="red">Red</SelectItem>
-                    <SelectItem value="green">Green</SelectItem>
-                    <SelectItem value="blue">Blue</SelectItem>
+                    <SelectItem value="brightness">亮度</SelectItem>
+                    <SelectItem value="hue">色相</SelectItem>
+                    <SelectItem value="saturation">饱和度</SelectItem>
+                    <SelectItem value="red">红</SelectItem>
+                    <SelectItem value="green">绿</SelectItem>
+                    <SelectItem value="blue">蓝</SelectItem>
                   </SelectContent>
                 </Select>
               </Row>
               <SliderRow
-                label="Threshold"
+                label="阈值"
                 value={sortThreshold}
                 min={0}
                 max={255}
@@ -408,7 +387,7 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
                 onChange={setSortThreshold}
               />
               <Row>
-                <label className="text-xs text-[var(--pml-prose-muted)]">Sort band</label>
+                <label className="text-xs text-[var(--pml-prose-muted)]">排序范围</label>
                 <Select
                   value={sortThresholdMode}
                   onValueChange={(v) => setSortThresholdMode(v as "above" | "below")}
@@ -417,13 +396,13 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="above">Above threshold</SelectItem>
-                    <SelectItem value="below">Below threshold</SelectItem>
+                    <SelectItem value="above">高于阈值</SelectItem>
+                    <SelectItem value="below">低于阈值</SelectItem>
                   </SelectContent>
                 </Select>
               </Row>
               <SliderRow
-                label="Intensity"
+                label="强度"
                 value={Math.round(sortIntensity * 100)}
                 min={0}
                 max={100}
@@ -434,12 +413,12 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
             </div>
           )}
 
-          {/* Morph controls */}
+          {/* 形变控件 */}
           {(mode === "morph" || mode === "pipeline") && (
             <div className="space-y-3 pml-card p-3">
-              <SectionLabel>Morph (cross-dissolve)</SectionLabel>
+              <SectionLabel>形变（交叉溶解）</SectionLabel>
               <SliderRow
-                label="Amount"
+                label="强度"
                 value={Math.round(morphAmount * 100)}
                 min={0}
                 max={100}
@@ -448,26 +427,26 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
                 suffix="%"
               />
               <Row>
-                <label className="text-xs text-[var(--pml-prose-muted)]">Easing</label>
+                <label className="text-xs text-[var(--pml-prose-muted)]">缓动</label>
                 <Select value={morphEase} onValueChange={(v) => setMorphEase(v as any)}>
                   <SelectTrigger className="h-8 w-32 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="linear">Linear</SelectItem>
-                    <SelectItem value="easeinout">Ease-in-out</SelectItem>
+                    <SelectItem value="linear">线性</SelectItem>
+                    <SelectItem value="easeinout">缓入缓出</SelectItem>
                   </SelectContent>
                 </Select>
               </Row>
             </div>
           )}
 
-          {/* Glitch controls */}
+          {/* 故障控件 */}
           {(mode === "glitch" || mode === "pipeline") && (
             <div className="space-y-3 pml-card p-3">
-              <SectionLabel>Glitch (block shift)</SectionLabel>
+              <SectionLabel>故障（块位移）</SectionLabel>
               <SliderRow
-                label="Amount"
+                label="强度"
                 value={Math.round(glitchAmount * 100)}
                 min={0}
                 max={100}
@@ -476,7 +455,7 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
                 suffix="%"
               />
               <SliderRow
-                label="Block count"
+                label="块数量"
                 value={glitchBlocks}
                 min={1}
                 max={60}
@@ -484,7 +463,7 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
                 onChange={setGlitchBlocks}
               />
               <Row>
-                <label className="text-xs text-[var(--pml-prose-muted)]">Seed</label>
+                <label className="text-xs text-[var(--pml-prose-muted)]">种子</label>
                 <div className="flex gap-1 items-center">
                   <input
                     type="number"
@@ -504,9 +483,9 @@ export function PixelTransformDemo({ onInteracted }: PixelTransformDemoProps) {
           {mode === "pipeline" && (
             <div className="pml-card p-3 flex items-center justify-between">
               <div>
-                <SectionLabel>Pipeline order</SectionLabel>
+                <SectionLabel>流水线顺序</SectionLabel>
                 <p className="text-[11px] text-[var(--pml-prose-muted)] mt-0.5">
-                  Toggle to apply sort before morph
+                  打开则在形变前先执行像素排序
                 </p>
               </div>
               <Switch checked={pipelineSortFirst} onCheckedChange={setPipelineSortFirst} />
@@ -603,7 +582,6 @@ function SliderRow({
   );
 }
 
-/** Resize a buffer to a new width/height via canvas. */
 function resizeBuffer(buf: RGBABuffer, w: number, h: number): RGBABuffer {
   if (typeof document === "undefined") return buf;
   const canvas = document.createElement("canvas");
