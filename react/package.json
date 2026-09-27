@@ -1,0 +1,22 @@
+{
+  "name": "naiwa-pet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "奶蛙桌宠 Web 独立版：四形态帧动画 + 点击/连点互动 + 拖拽甩飞物理（React 组件 + demo）",
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^16.1.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}
