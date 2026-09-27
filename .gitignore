@@ -1,2 +1,10 @@
 ﻿build/
 .vscode/
+pixel-morph-lab/.next/
+pixel-morph-lab/dev.log
+pixel-morph-lab/server.log
+pixel-morph-lab/.zscripts/dev.log
+pixel-morph-lab/.zscripts/dev.pid
+pixel-morph-lab/db/*.db
+pixel-morph-lab/node_modules/
+pixel-morph-lab/scripts/*.png
