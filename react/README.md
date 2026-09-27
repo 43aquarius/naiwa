@@ -58,3 +58,25 @@ import { petVoice } from './lib/pet';
 # 依赖 Pillow；SRC 指向原版桌宠 assets/（idle/smile/laugh/cry 帧目录）
 python3 scripts/build_pet_sprites.py
 ```
+
+## 本次更新（desktop-pet 分支）
+
+| 文件 | 改动 |
+|------|------|
+| `src/app/layout.tsx` | 新增 `viewport` 导出：禁缩放 + `viewportFit: cover`（iPhone 安全区） |
+| `src/components/NaiwaPet.tsx` | 新增 `sensor` / `onSensor` props：DeviceMotion 体感物理（屏幕坐标系真实重力 + 晃动冲击 + 符号约定自检）；撞墙笑逻辑（微笑/大笑模式撞击墙壁重新触发情绪 + 音效） |
+| `src/app/page.tsx` | 入场提示自动消失；可隐藏面板 + 🐸 悬浮唤回按钮；大小滑杆（80–420px）；体感开关（iOS 权限请求 + 降级 Toast）；动态地板；移动端响应式样式 |
+
+### 体感物理说明
+
+开启「📱 体感」后（需真实移动设备 + HTTPS 环境）：
+
+- **倾斜手机** → 奶蛙向低处滚动（重力实时映射到屏幕坐标系，按屏幕方向角自动旋转）
+- **手机平放** → 近似失重，奶蛙漂浮（真·物理）
+- **摇晃手机** → 高通分量产生冲击，奶蛙在屏幕里来回碰撞
+- **iOS/Android 加速度符号差异** → 运行时按"直立姿态投影"自动判定，无需区分平台
+- **桌面/无传感器** → 1.5s 数据探测失败后自动关闭并提示
+
+### 撞墙笑说明
+
+处于「微笑」或「大笑」模式（面板按钮或连点触发均可）时，奶蛙每次**真实撞击**墙壁（撞击速度 > 2.5px/f，480ms 冷却）都会从头重播当前情绪动画并播放音效。

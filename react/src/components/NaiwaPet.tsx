@@ -1,6 +1,6 @@
 'use client';
 
-/* 奶蛙桌宠组件：四形态帧动画播放器 + 桌宠交互（点击/连点/拖拽甩飞物理）。
+/* 奶蛙桌宠组件：四形态帧动画播放器 + 桌宠交互（点击/连点/拖拽甩飞物理 + 移动设备体感）。
  * 交互参数逐项对齐原版桌宠（43aquaris/naiwa · main.cpp）：
  *   - 单击 → smile（750ms 单次）
  *   - 1.5 秒内连点 5 次 → laugh（5667ms 单次，音效延迟 300ms 由音频层处理）
@@ -8,6 +8,12 @@
  *     初速度取最近 100ms 轨迹；60fps 固定步长；物理量按显示高度比例缩放
  *   - 撞壁挤压：上下 0.40 / 左右 0.20，压缩 100ms + 复原 150ms
  *   - 身体碰撞盒取 idle 内容 bbox（占帧比例），避免透明留白先触壁
+ * 体感（sensor=true，移动设备）：
+ *   - DeviceMotion 加速度计 → 屏幕坐标系重力：手机倾斜时奶蛙向低处滚，
+ *     平放时失重漂浮，握持直立时与原版重力一致
+ *   - 高通分量 → 晃动冲击：摇晃手机让奶蛙在屏幕里来回碰撞
+ *   - 自动探测 iOS/Android 加速度符号约定差异（运行时按姿态投影判定）
+ * 撞墙笑：处于微笑/大笑模式时，每次真实撞击墙壁都会重新触发当前情绪 + 音效
  * 零第三方依赖：仅需 React；样式全部内联，可嵌入任意 React / Next.js 项目。
  */
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
@@ -18,7 +24,7 @@ export interface NaiwaPetProps {
   mood?: PetMood;
   /** 变化时重置播放（用于重复触发同一情绪） */
   nonce?: number;
-  /** 显示高度 px */
+  /** 显示高度 px（可运行时自由调整，物理常数自动按比例重算） */
   size?: number;
   /** 桌宠交互模式：渲染为覆盖父容器的自由层，可点击 / 拖拽甩飞 */
   interactive?: boolean;
@@ -28,6 +34,10 @@ export interface NaiwaPetProps {
   initX?: number;
   /** 交互音效回调（默认接内置 petVoice；传 null 可静音） */
   onEvent?: ((e: 'smile' | 'laugh') => void) | null;
+  /** 开启移动设备体感物理（权限请求由父组件在用户手势内完成） */
+  sensor?: boolean;
+  /** 体感状态回报：on / off / nodata（用于父组件提示） */
+  onSensor?: (state: 'on' | 'off' | 'nodata') => void;
   className?: string;
   style?: CSSProperties;
   /** 雪碧图未加载时的占位内容 */
@@ -44,10 +54,61 @@ const DRAG_THRESHOLD = 6;
 /** 原版 laugh 显示尺寸：TARGET_W=180 → 高 718/518×180 ≈ 249.5px，物理常数基准 */
 const REF_H = (718 / 518) * 180;
 
+/** 撞墙笑：撞击速度阈值（px/f，按 k 缩放）与冷却时间 */
+const HIT_SPEED = 2.5;
+const HIT_COOLDOWN = 480;
+
+/** 体感参数 */
+const G_REF = 9.81;        // 1g 参考值（m/s²）
+const SMOOTH_A = 0.15;     // 重力低通系数（每事件）
+const JOLT_GAIN = 5.5;     // 晃动冲击增益（Δv = 高通/1g × GRAV × 增益）
+const JOLT_CAP = 2.2;      // 单帧冲击上限（×k px/f）
+const G_CLAMP = 1.6;       // 重力分量限幅（×1g）
+
 interface DragState {
   offX: number; offY: number;
   moved: number; t0: number; dragged: boolean;
   hist: { t: number; x: number; y: number }[];
+}
+
+/** 体感运行时状态（事件侧写入，物理步进消费） */
+interface SensorState {
+  active: boolean;
+  gx: number; gy: number;          // 低通后的屏幕重力（m/s²，y 向下为正）
+  pjx: number; pjy: number;        // 待施加的晃动冲击（px/f 累积）
+  sign: 0 | 1 | -1;                // 平台符号约定（0 = 未判定）
+  samples: number;
+  hasData: boolean;
+}
+
+/** device → CSS 屏幕（y 向下）分量映射，按屏幕方向角 */
+function toScreen(dx: number, dy: number, ang: number): [number, number] {
+  switch (ang) {
+    case 90:  return [dy, dx];
+    case 180: return [-dx, dy];
+    case 270: return [-dy, -dx];
+    default:  return [dx, -dy];
+  }
+}
+
+function screenAngle(): number {
+  if (typeof screen !== 'undefined' && screen.orientation && typeof screen.orientation.angle === 'number') {
+    return ((screen.orientation.angle % 360) + 360) % 360;
+  }
+  const wo = typeof window !== 'undefined'
+    ? (window as unknown as { orientation?: number }).orientation : undefined;
+  if (typeof wo === 'number') return ((-wo % 360) + 360) % 360;  // 旧 API 符号相反
+  return 0;
+}
+
+/** 当前方向下"设备直立"时的期望重力方向（spec 约定），用于符号自检 */
+function uprightVector(ang: number): [number, number] {
+  switch (ang) {
+    case 90:  return [-1, 0];
+    case 180: return [0, -1];
+    case 270: return [1, 0];
+    default:  return [0, 1];
+  }
 }
 
 export default function NaiwaPet({
@@ -58,6 +119,8 @@ export default function NaiwaPet({
   floorOffset = 76,
   initX = 0.16,
   onEvent,
+  sensor = false,
+  onSensor,
   className,
   style,
   fallback,
@@ -71,6 +134,11 @@ export default function NaiwaPet({
   const moodRef = useRef(mood);
   const onEventRef = useRef(onEvent);
   const clicks = useRef<number[]>([]);
+  const sensorState = useRef<SensorState>({
+    active: false, gx: 0, gy: G_REF, pjx: 0, pjy: 0,
+    sign: 0, samples: 0, hasData: false,
+  });
+  const lastHitLaugh = useRef(0);
   const phys = useRef({
     x: 160, y: 200, vx: 0, vy: 0,
     drag: null as DragState | null,
@@ -99,6 +167,66 @@ export default function NaiwaPet({
     nonceSeen.current = nonce;
   }, [nonce]);
 
+  /* ---------- 体感：DeviceMotion 监听（sensor=true 时挂载） ---------- */
+  useEffect(() => {
+    if (!sensor || typeof window === 'undefined') return;
+    const s = sensorState.current;
+    s.active = true; s.sign = 0; s.samples = 0; s.hasData = false;
+
+    const onMotion = (ev: DeviceMotionEvent) => {
+      const a = ev.accelerationIncludingGravity;
+      /* 任一分量为 null 即丢弃（桌面 Chrome 会派发空事件，防污染重力状态） */
+      if (!a || a.x == null || a.y == null || a.z == null) return;
+      const ax = a.x, ay = a.y, az = a.z;
+      s.samples++;
+      if (Math.abs(ax) + Math.abs(ay) + Math.abs(az) > 2) s.hasData = true;
+
+      /* 符号约定自检：将观测投影到"当前方向直立"的期望重力上 */
+      if (s.sign === 0) {
+        const ang = screenAngle();
+        const [ex, ey] = uprightVector(ang);
+        const proj = ax * ex + ay * ey;
+        if (proj > 3) s.sign = 1;
+        else if (proj < -3) s.sign = -1;
+        else if (s.samples > 150) s.sign = 1;   // ~2.5s 仍无法判定 → 按 spec 约定
+        else return;
+      }
+
+      /* 设备坐标 → 规范化为 spec 约定 → 屏幕坐标（CSS y 向下） → 取物理力方向 */
+      const ang = screenAngle();
+      const [sx, sy] = toScreen(ax * s.sign, ay * s.sign, ang);
+      const gx = -sx, gy = -sy;                 // 物理力 = -比力
+
+      /* 低通 → 重力；高通 → 晃动冲击 */
+      const lgx = s.gx + (gx - s.gx) * SMOOTH_A;
+      const lgy = s.gy + (gy - s.gy) * SMOOTH_A;
+      s.pjx += (gx - lgx) / G_REF;
+      s.pjy += (gy - lgy) / G_REF;
+      s.gx = lgx; s.gy = lgy;
+    };
+
+    window.addEventListener('devicemotion', onMotion);
+
+    /* 数据可用性探测：1.5s 内没有有效样本则回报 nodata */
+    const probe = window.setTimeout(() => {
+      if (!s.hasData) {
+        s.active = false;
+        window.removeEventListener('devicemotion', onMotion);
+        onSensor?.('nodata');
+      } else {
+        onSensor?.('on');
+      }
+    }, 1500);
+
+    return () => {
+      window.clearTimeout(probe);
+      window.removeEventListener('devicemotion', onMotion);
+      s.active = false;
+      onSensor?.('off');
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sensor]);
+
   /* ---------- 渲染 + 物理主循环 ---------- */
   useEffect(() => {
     if (!ready) return;
@@ -126,6 +254,10 @@ export default function NaiwaPet({
       if (!layer) return;
       const r = layer.getBoundingClientRect();
       bounds = { w: r.width, h: r.height };
+      /* 尺寸变化后把奶蛙夹回边界内 */
+      const p0 = phys.current;
+      p0.x = Math.min(Math.max(p0.x, dispW / 2 - PET.body.l * dispW), bounds.w - dispW / 2 + PET.body.r * dispW);
+      p0.y = Math.min(Math.max(p0.y, dispH / 2 - PET.body.t * dispH), bounds.h - dispH / 2 + PET.body.b * dispH);
     };
     refreshBounds();
     const ro = new ResizeObserver(refreshBounds);
@@ -143,6 +275,19 @@ export default function NaiwaPet({
       if (l && performance.now() < l.until) return l.mood;
       local.current = null;
       return moodRef.current;
+    };
+
+    /* 撞墙笑：微笑/大笑模式下，真实撞击 → 重新触发当前情绪 + 音效 */
+    const hitLaugh = (now: number, speed: number) => {
+      if (speed < HIT_SPEED * k) return;                    // 贴墙滑动/静置不算
+      if (now - lastHitLaugh.current < HIT_COOLDOWN) return; // 冷却，防止连帧重复
+      const m = effectiveMood();
+      if (m !== 'smile' && m !== 'laugh') return;
+      lastHitLaugh.current = now;
+      anim.current = { mood: m, frame: 0, elapsed: 0 };
+      const l = local.current;
+      if (l && l.mood === m) l.until = now + (m === 'laugh' ? LAUGH_MS : SMILE_MS);
+      onEventRef.current?.(m);
     };
 
     const squishScale = (now: number): [number, number] => {
@@ -165,7 +310,23 @@ export default function NaiwaPet({
         if (p.drag) {
           p.vx = 0; p.vy = 0;
         } else {
-          p.vy += GRAV;
+          const sn = sensorState.current;
+          if (sn.active && sn.sign !== 0) {
+            /* 体感模式：屏幕坐标系真实重力 + 晃动冲击（平放≈失重，倾斜→滚向低处） */
+            const gxn = Math.max(-G_CLAMP, Math.min(G_CLAMP, sn.gx / G_REF));
+            const gyn = Math.max(-G_CLAMP, Math.min(G_CLAMP, sn.gy / G_REF));
+            p.vx += gxn * GRAV;
+            p.vy += gyn * GRAV;
+            const cap = JOLT_CAP * k;
+            let jx = sn.pjx * GRAV * JOLT_GAIN;
+            let jy = sn.pjy * GRAV * JOLT_GAIN;
+            jx = Math.max(-cap, Math.min(cap, jx));
+            jy = Math.max(-cap, Math.min(cap, jy));
+            p.vx += jx; p.vy += jy;
+            sn.pjx = 0; sn.pjy = 0;
+          } else {
+            p.vy += GRAV;
+          }
           p.vx *= DRAG; p.vy *= DRAG;
           p.x += p.vx; p.y += p.vy;
           const bl = p.x - dispW / 2 + PET.body.l * dispW;
@@ -174,19 +335,23 @@ export default function NaiwaPet({
           const bb = p.y + dispH / 2 - PET.body.b * dispH;
           if (bl < 0) {
             p.x -= bl;
+            hitLaugh(now, Math.abs(p.vx));
             p.vx = Math.abs(p.vx) < SIDE_STOP ? 0 : Math.abs(p.vx) * BOUNCE;
             p.squish = { t: now, vertical: false };
           } else if (br > bounds.w) {
             p.x -= br - bounds.w;
+            hitLaugh(now, Math.abs(p.vx));
             p.vx = Math.abs(p.vx) < SIDE_STOP ? 0 : -Math.abs(p.vx) * BOUNCE;
             p.squish = { t: now, vertical: false };
           }
           if (bt < 0) {
             p.y -= bt;
+            hitLaugh(now, Math.abs(p.vy));
             p.vy = Math.abs(p.vy) * BOUNCE;
             p.squish = { t: now, vertical: true };
           } else if (bb > bounds.h) {
             p.y -= bb - bounds.h;
+            hitLaugh(now, Math.abs(p.vy));
             p.vy = Math.abs(p.vy) < STOP ? 0 : -Math.abs(p.vy) * BOUNCE;
             p.squish = { t: now, vertical: true };
           }
