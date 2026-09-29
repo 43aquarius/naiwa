@@ -25,8 +25,8 @@ import {
   type SortMetric,
 } from "@/lib/pixel-utils";
 
-const DEFAULT_SRC = "/demo/smile_01.png";
-const DEFAULT_DST = "/demo/smile_06.png";
+const DEFAULT_SRC = "/demo/idle_40.png"; // 奶龙默认状态
+const DEFAULT_DST = "/demo/laugh_10.png"; // 奶龙大笑状态
 const MAX_DIM = 400;
 
 type Mode = "sort" | "morph" | "glitch" | "pipeline";
@@ -44,8 +44,8 @@ export function PixelTransformDemo() {
   const [mode, setMode] = React.useState<Mode>("morph");
   const [srcUrl, setSrcUrl] = React.useState(DEFAULT_SRC);
   const [dstUrl, setDstUrl] = React.useState(DEFAULT_DST);
-  const [srcName, setSrcName] = React.useState("smile_01.png");
-  const [dstName, setDstName] = React.useState("smile_06.png");
+  const [srcName, setSrcName] = React.useState("idle_40.png");
+  const [dstName, setDstName] = React.useState("laugh_10.png");
 
   // 排序参数
   const [sortDir, setSortDir] = React.useState<SortDirection>("horizontal");
@@ -96,7 +96,7 @@ export function PixelTransformDemo() {
         }
         render();
       } catch (e: any) {
-        setError("加载默认图片失败：" + (e?.message ?? e));
+        setError("加载奶龙默认图片失败：" + (e?.message ?? e));
       }
     })();
     return () => {
@@ -343,7 +343,7 @@ export function PixelTransformDemo() {
             />
           </div>
           <p className="text-[11px] text-[var(--pml-prose-muted)] -mt-2">
-            默认示例为 smile_01 → smile_06，点击上方卡片可上传自定义 PNG / JPG。
+            默认示例为奶龙 idle_40 → laugh_10，点击上方卡片可上传自定义 PNG / JPG。
           </p>
 
           {/* 排序控件 */}

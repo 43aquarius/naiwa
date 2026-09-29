@@ -24,15 +24,15 @@ export default function Home() {
             PM
           </span>
           <span className="font-serif text-base font-semibold tracking-tight">
-            像素变换实验室
+            奶龙像素变换
           </span>
           <span
             className="text-xs text-[var(--pml-prose-muted)] font-mono ml-1"
           >
-            Pixel Morph Lab
+            Nailong Pixel Morph
           </span>
           <span className="ml-auto text-xs text-[var(--pml-prose-muted)]">
-            默认示例：smile_01 → smile_06
+            默认示例：idle_40 → laugh_10
           </span>
         </div>
       </header>
@@ -50,7 +50,7 @@ export default function Home() {
           background: "var(--pml-muted)",
         }}
       >
-        © {new Date().getFullYear()} 像素变换实验室 · 基于 Next.js + Canvas API 构建
+        © {new Date().getFullYear()} 奶龙像素变换 · 基于 Next.js + Canvas API 构建
       </footer>
     </div>
   );
