@@ -1,600 +1,697 @@
 "use client";
 
 import * as React from "react";
-import { Upload, Download, Loader2, Shuffle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
-import {
-  pixelSort,
-  morph,
-  glitch,
-  imageToBuffer,
-  loadImage,
-  drawBuffer,
-  type RGBABuffer,
-  type SortDirection,
-  type SortMetric,
-} from "@/lib/pixel-utils";
+
+/* ============================================================
+ * 像素排序变换 — 直接移植自 https://pixel-sort-morph.netlify.app
+ *
+ * 算法核心：
+ *   1. 把 A、B 两张图都按某指标（明度/饱和度/色相/RGB）排序
+ *   2. A 中第 i 个像素（按指标排名）→ 移动到 B 中第 i 个像素的位置
+ *   3. 用 easeInOutCubic 在指定时长内逐帧插值绘制
+ *   4. 可选拖尾效果（每帧 decay=0.98 衰减到背景）+ 图 A 作背景
+ * ============================================================ */
 
 const DEFAULT_SRC = "/demo/idle_40.png"; // 奶龙默认状态
 const DEFAULT_DST = "/demo/laugh_10.png"; // 奶龙大笑状态
-const MAX_DIM = 400;
 
-type Mode = "sort" | "morph" | "glitch" | "pipeline";
+type SortMethod = "luminance" | "saturation" | "hue" | "red" | "green" | "blue";
+
+interface Pixel {
+  r: number;
+  g: number;
+  b: number;
+  x: number;
+  y: number;
+  key: number;
+}
+interface SortedPixel {
+  r: number;
+  g: number;
+  b: number;
+  sx: number;
+  sy: number;
+  tx: number;
+  ty: number;
+}
+
+function sortKey(r: number, g: number, b: number, method: SortMethod) {
+  switch (method) {
+    case "luminance":
+      return 0.299 * r + 0.587 * g + 0.114 * b;
+    case "saturation": {
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      return max === 0 ? 0 : (max - min) / max;
+    }
+    case "hue": {
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      if (max === min) return 0;
+      const d = max - min;
+      if (max === r) return ((g - b) / d + (g < b ? 6 : 0)) / 6;
+      if (max === g) return ((b - r) / d + 2) / 6;
+      return ((r - g) / d + 4) / 6;
+    }
+    case "red":
+      return r;
+    case "green":
+      return g;
+    case "blue":
+      return b;
+    default:
+      return 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+}
+
+function fileToImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("图片加载失败"));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error("文件读取失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function urlToImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("图片加载失败"));
+    img.src = url;
+  });
+}
+
+function cropAndResize(img: HTMLImageElement, size: number): ImageData {
+  const c = document.createElement("canvas");
+  c.width = size;
+  c.height = size;
+  const octx = c.getContext("2d", { willReadFrequently: true })!;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const imgAspect = iw / ih;
+  let sx, sy, sw, sh;
+  if (imgAspect > 1) {
+    sh = ih;
+    sw = ih;
+    sx = (iw - sw) / 2;
+    sy = 0;
+  } else {
+    sw = iw;
+    sh = iw;
+    sx = 0;
+    sy = (ih - sh) / 2;
+  }
+  octx.drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
+  return octx.getImageData(0, 0, size, size);
+}
+
+function easeInOutCubic(t: number) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function getDisplaySize() {
+  if (typeof window === "undefined") return 400;
+  const isMobile = window.innerWidth <= 850;
+  if (isMobile) {
+    return Math.min(window.innerWidth - 20, window.innerHeight - 270, 500);
+  }
+  return Math.min(580, window.innerWidth - 300, window.innerHeight - 280);
+}
 
 export function PixelTransformDemo() {
-  const srcImgRef = React.useRef<HTMLImageElement | null>(null);
-  const dstImgRef = React.useRef<HTMLImageElement | null>(null);
-  const srcBufRef = React.useRef<RGBABuffer | null>(null);
-  const dstBufRef = React.useRef<RGBABuffer | null>(null);
-
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
-  const srcInputRef = React.useRef<HTMLInputElement>(null);
-  const dstInputRef = React.useRef<HTMLInputElement>(null);
+  const ctxRef = React.useRef<CanvasRenderingContext2D | null>(null);
 
-  const [mode, setMode] = React.useState<Mode>("morph");
-  const [srcUrl, setSrcUrl] = React.useState(DEFAULT_SRC);
-  const [dstUrl, setDstUrl] = React.useState(DEFAULT_DST);
-  const [srcName, setSrcName] = React.useState("idle_40.png");
-  const [dstName, setDstName] = React.useState("laugh_10.png");
+  // 上传 UI 状态
+  const [thumbA, setThumbA] = React.useState<string | null>(null);
+  const [thumbB, setThumbB] = React.useState<string | null>(null);
+  const [infoA, setInfoA] = React.useState("");
+  const [infoB, setInfoB] = React.useState("");
+  const fileARef = React.useRef<HTMLInputElement>(null);
+  const fileBRef = React.useRef<HTMLInputElement>(null);
 
-  // 排序参数
-  const [sortDir, setSortDir] = React.useState<SortDirection>("horizontal");
-  const [sortMetric, setSortMetric] = React.useState<SortMetric>("brightness");
-  const [sortThreshold, setSortThreshold] = React.useState(128);
-  const [sortThresholdMode, setSortThresholdMode] = React.useState<"above" | "below">("above");
-  const [sortIntensity, setSortIntensity] = React.useState(0.8);
+  // 控件状态
+  const [resolution, setResolution] = React.useState(120);
+  const [sortMethod, setSortMethod] = React.useState<SortMethod>("luminance");
+  const [duration, setDuration] = React.useState(2500);
+  const [trailOn, setTrailOn] = React.useState(false);
+  const [bgImgAOn, setBgImgAOn] = React.useState(false);
 
-  // 形变参数
-  const [morphAmount, setMorphAmount] = React.useState(0.5);
-  const [morphEase, setMorphEase] = React.useState<"linear" | "easeinout">("easeinout");
+  // 运行时状态
+  const [status, setStatus] = React.useState("正在加载默认图片...");
+  const [statusKind, setStatusKind] = React.useState<"idle" | "ready" | "animating">("idle");
 
-  // 故障参数
-  const [glitchAmount, setGlitchAmount] = React.useState(0.5);
-  const [glitchBlocks, setGlitchBlocks] = React.useState(12);
-  const [glitchSeed, setGlitchSeed] = React.useState(42);
-
-  // 流水线
-  const [pipelineSortFirst, setPipelineSortFirst] = React.useState(true);
-
-  const [autoRun, setAutoRun] = React.useState(true);
-  const [running, setRunning] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  // 默认加载
+  // 持久状态（不触发重渲染）
+  const originalImgARef = React.useRef<HTMLImageElement | null>(null);
+  const originalImgBRef = React.useRef<HTMLImageElement | null>(null);
+  const imageADataRef = React.useRef<ImageData | null>(null);
+  const imageBDataRef = React.useRef<ImageData | null>(null);
+  const sortedARef = React.useRef<SortedPixel[] | null>(null);
+  const animationIdRef = React.useRef<number | null>(null);
+  const isAnimatingRef = React.useRef(false);
+  const trailBufferRef = React.useRef<ImageData | null>(null);
+  // 用 ref 同步当前的控件值给动画循环
+  const trailOnRef = React.useRef(trailOn);
+  const bgImgAOnRef = React.useRef(bgImgAOn);
   React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [src, dst] = await Promise.all([
-          loadImage(DEFAULT_SRC),
-          loadImage(DEFAULT_DST),
-        ]);
-        if (cancelled) return;
-        srcImgRef.current = src;
-        dstImgRef.current = dst;
-        srcBufRef.current = imageToBuffer(src, MAX_DIM);
-        dstBufRef.current = imageToBuffer(dst, MAX_DIM);
-        if (
-          srcBufRef.current.width !== dstBufRef.current.width ||
-          srcBufRef.current.height !== dstBufRef.current.height
-        ) {
-          dstBufRef.current = resizeBuffer(
-            dstBufRef.current,
-            srcBufRef.current.width,
-            srcBufRef.current.height
-          );
+    trailOnRef.current = trailOn;
+  }, [trailOn]);
+  React.useEffect(() => {
+    bgImgAOnRef.current = bgImgAOn;
+  }, [bgImgAOn]);
+
+  // === 处理图片：排序后构建 sortedA ===
+  function processImages() {
+    if (!imageADataRef.current || !imageBDataRef.current) return;
+    const size = imageADataRef.current.width;
+
+    function extract(imageData: ImageData): Pixel[] {
+      const d = imageData.data;
+      const pixels: Pixel[] = [];
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const i = (y * size + x) * 4;
+          pixels.push({
+            r: d[i],
+            g: d[i + 1],
+            b: d[i + 2],
+            x,
+            y,
+            key: sortKey(d[i], d[i + 1], d[i + 2], sortMethod),
+          });
         }
-        render();
-      } catch (e: any) {
-        setError("加载奶龙默认图片失败：" + (e?.message ?? e));
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      return pixels;
+    }
 
-  React.useEffect(() => {
-    if (autoRun) render();
-  }, [
-    mode,
-    sortDir,
-    sortMetric,
-    sortThreshold,
-    sortThresholdMode,
-    sortIntensity,
-    morphAmount,
-    morphEase,
-    glitchAmount,
-    glitchBlocks,
-    glitchSeed,
-    pipelineSortFirst,
-    autoRun,
-  ]);
+    const pixelsA = extract(imageADataRef.current);
+    const pixelsB = extract(imageBDataRef.current);
+    pixelsA.sort((a, b) => a.key - b.key);
+    pixelsB.sort((a, b) => a.key - b.key);
 
-  function render() {
+    const arr: SortedPixel[] = new Array(size * size);
+    for (let i = 0; i < pixelsA.length; i++) {
+      arr[i] = {
+        r: pixelsA[i].r,
+        g: pixelsA[i].g,
+        b: pixelsA[i].b,
+        sx: pixelsA[i].x,
+        sy: pixelsA[i].y,
+        tx: pixelsB[i].x,
+        ty: pixelsB[i].y,
+      };
+    }
+    sortedARef.current = arr;
+  }
+
+  // === 设置画布尺寸 ===
+  function setCanvasSize(size: number) {
     const canvas = canvasRef.current;
-    const src = srcBufRef.current;
-    const dst = dstBufRef.current;
-    if (!canvas || !src) return;
-    setRunning(true);
-    setError(null);
-    try {
-      let out: RGBABuffer;
-      if (mode === "sort") {
-        out = pixelSort(src, {
-          direction: sortDir,
-          metric: sortMetric,
-          threshold: sortThreshold,
-          thresholdMode: sortThresholdMode,
-          intensity: sortIntensity,
-        });
-      } else if (mode === "morph") {
-        if (!dst) {
-          setError("目标图片尚未加载");
-          setRunning(false);
-          return;
-        }
-        out = morph(src, dst, { amount: morphAmount, easing: morphEase });
-      } else if (mode === "glitch") {
-        out = glitch(src, {
-          amount: glitchAmount,
-          blockCount: glitchBlocks,
-          seed: glitchSeed,
-        });
+    if (!canvas) return;
+    canvas.width = size;
+    canvas.height = size;
+    const ds = getDisplaySize();
+    canvas.style.width = ds + "px";
+    canvas.style.height = ds + "px";
+  }
+
+  // === 渲染初始 A ===
+  function renderImageA() {
+    if (!imageADataRef.current) return;
+    const size = imageADataRef.current.width;
+    setCanvasSize(size);
+    const ctx = ctxRef.current!;
+    ctx.putImageData(imageADataRef.current, 0, 0);
+  }
+
+  // === 渲染动画帧 ===
+  function renderFrame(progress: number) {
+    if (!sortedARef.current || !imageADataRef.current) return;
+    const size = imageADataRef.current.width;
+    setCanvasSize(size);
+    const ctx = ctxRef.current!;
+
+    if (!trailOnRef.current) {
+      // 无拖尾：每帧重画
+      const imgData = ctx.createImageData(size, size);
+      const data = imgData.data;
+      if (bgImgAOnRef.current && imageADataRef.current) {
+        const src = imageADataRef.current.data;
+        for (let i = 0; i < data.length; i++) data[i] = src[i];
       } else {
-        if (!dst) {
-          setError("目标图片尚未加载");
-          setRunning(false);
-          return;
+        for (let i = 0; i < data.length; i += 4) {
+          data[i] = 10;
+          data[i + 1] = 8;
+          data[i + 2] = 20;
+          data[i + 3] = 255;
         }
-        const sorted: RGBABuffer = pixelSort(src, {
-          direction: sortDir,
-          metric: sortMetric,
-          threshold: sortThreshold,
-          thresholdMode: sortThresholdMode,
-          intensity: sortIntensity,
-        });
-        const baseForMorph = pipelineSortFirst ? sorted : src;
-        const morphed = morph(baseForMorph, dst, {
-          amount: morphAmount,
-          easing: morphEase,
-        });
-        out = glitch(morphed, {
-          amount: glitchAmount,
-          blockCount: glitchBlocks,
-          seed: glitchSeed,
-        });
       }
-      canvas.width = out.width;
-      canvas.height = out.height;
-      const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-      drawBuffer(ctx, out);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setRunning(false);
+      const sorted = sortedARef.current;
+      for (let p = 0; p < sorted.length; p++) {
+        const px = sorted[p];
+        const cx = px.sx + (px.tx - px.sx) * progress;
+        const cy = px.sy + (px.ty - px.sy) * progress;
+        const ix = Math.round(cx);
+        const iy = Math.round(cy);
+        if (ix >= 0 && ix < size && iy >= 0 && iy < size) {
+          const idx = (iy * size + ix) * 4;
+          data[idx] = px.r;
+          data[idx + 1] = px.g;
+          data[idx + 2] = px.b;
+          data[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+    } else {
+      // 拖尾效果：累积帧
+      if (
+        !trailBufferRef.current ||
+        trailBufferRef.current.width !== size
+      ) {
+        trailBufferRef.current = ctx.createImageData(size, size);
+        initTrailBuffer(size);
+      }
+      const buf = trailBufferRef.current.data;
+      const decay = 0.98;
+      if (bgImgAOnRef.current && imageADataRef.current) {
+        const src = imageADataRef.current.data;
+        for (let i = 0; i < buf.length; i += 4) {
+          buf[i] = buf[i] * decay + src[i] * (1 - decay);
+          buf[i + 1] = buf[i + 1] * decay + src[i + 1] * (1 - decay);
+          buf[i + 2] = buf[i + 2] * decay + src[i + 2] * (1 - decay);
+          buf[i + 3] = 255;
+        }
+      } else {
+        for (let i = 0; i < buf.length; i += 4) {
+          buf[i] *= decay;
+          buf[i + 1] *= decay;
+          buf[i + 2] *= decay;
+          buf[i + 3] = 255;
+        }
+      }
+      const sorted = sortedARef.current;
+      for (let p = 0; p < sorted.length; p++) {
+        const px = sorted[p];
+        const cx = px.sx + (px.tx - px.sx) * progress;
+        const cy = px.sy + (px.ty - px.sy) * progress;
+        const ix = Math.round(cx);
+        const iy = Math.round(cy);
+        if (ix >= 0 && ix < size && iy >= 0 && iy < size) {
+          const idx = (iy * size + ix) * 4;
+          buf[idx] = px.r;
+          buf[idx + 1] = px.g;
+          buf[idx + 2] = px.b;
+          buf[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(trailBufferRef.current, 0, 0);
     }
   }
 
-  function onUploadSrc(file: File) {
-    const url = URL.createObjectURL(file);
-    setSrcUrl(url);
-    setSrcName(file.name);
-    loadImage(url)
-      .then((img) => {
-        srcImgRef.current = img;
-        srcBufRef.current = imageToBuffer(img, MAX_DIM);
-        if (dstBufRef.current) {
-          dstBufRef.current = resizeBuffer(
-            imageToBuffer(dstImgRef.current ?? img, MAX_DIM),
-            srcBufRef.current.width,
-            srcBufRef.current.height
-          );
-        }
-        render();
-      })
-      .catch((e) => setError("加载源图片失败：" + (e?.message ?? e)));
+  function initTrailBuffer(size: number) {
+    const buf = trailBufferRef.current!.data;
+    if (bgImgAOnRef.current && imageADataRef.current) {
+      const src = imageADataRef.current.data;
+      for (let i = 0; i < buf.length; i++) buf[i] = src[i];
+    } else {
+      for (let i = 0; i < buf.length; i += 4) {
+        buf[i] = 10;
+        buf[i + 1] = 8;
+        buf[i + 2] = 20;
+        buf[i + 3] = 255;
+      }
+    }
   }
 
-  function onUploadDst(file: File) {
-    const url = URL.createObjectURL(file);
-    setDstUrl(url);
-    setDstName(file.name);
-    loadImage(url)
-      .then((img) => {
-        dstImgRef.current = img;
-        const base = imageToBuffer(img, MAX_DIM);
-        if (srcBufRef.current) {
-          dstBufRef.current = resizeBuffer(
-            base,
-            srcBufRef.current.width,
-            srcBufRef.current.height
-          );
-        } else {
-          dstBufRef.current = base;
-        }
-        render();
-      })
-      .catch((e) => setError("加载目标图片失败：" + (e?.message ?? e)));
+  // === 动画 ===
+  function startAnimation() {
+    if (isAnimatingRef.current || !sortedARef.current) return;
+    isAnimatingRef.current = true;
+    trailBufferRef.current = null;
+    setStatus("变换中...");
+    setStatusKind("animating");
+
+    const startTime = performance.now();
+    const dur = duration;
+
+    function frame(now: number) {
+      const elapsed = now - startTime;
+      const raw = Math.min(elapsed / dur, 1);
+      renderFrame(easeInOutCubic(raw));
+      if (raw < 1) {
+        animationIdRef.current = requestAnimationFrame(frame);
+      } else {
+        isAnimatingRef.current = false;
+        animationIdRef.current = null;
+        trailBufferRef.current = null;
+        setStatus('变换完成！用图片 A 的像素拼出了图片 B 的结构');
+        setStatusKind("ready");
+      }
+    }
+    animationIdRef.current = requestAnimationFrame(frame);
   }
 
-  function downloadCanvas() {
+  function resetToA() {
+    if (isAnimatingRef.current) {
+      if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
+      isAnimatingRef.current = false;
+      animationIdRef.current = null;
+    }
+    trailBufferRef.current = null;
+    renderImageA();
+    setStatus('已重置 — 点击"开始变换"查看动画');
+    setStatusKind("ready");
+  }
+
+  function onBothReady() {
+    processImages();
+    renderImageA();
+    setStatus('准备就绪 — 点击"开始变换"查看动画');
+    setStatusKind("ready");
+  }
+
+  // === 加载图片处理 ===
+  async function handleFile(file: File, side: "A" | "B") {
+    if (side === "A") setInfoA("加载中...");
+    else setInfoB("加载中...");
+    try {
+      const img = await fileToImage(file);
+      if (side === "A") originalImgARef.current = img;
+      else originalImgBRef.current = img;
+
+      // 缩略图
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (side === "A") setThumbA(e.target?.result as string);
+        else setThumbB(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+
+      const size = resolution;
+      const imageData = cropAndResize(img, size);
+      if (side === "A") {
+        imageADataRef.current = imageData;
+        setInfoA(`已处理: ${size}×${size} 像素`);
+        if (imageBDataRef.current) onBothReady();
+        else {
+          setStatus("已加载图片 A — 请上传图片 B");
+          setStatusKind("idle");
+        }
+      } else {
+        imageBDataRef.current = imageData;
+        setInfoB(`已处理: ${size}×${size} 像素`);
+        if (imageADataRef.current) onBothReady();
+        else {
+          setStatus("已加载图片 B — 请上传图片 A");
+          setStatusKind("idle");
+        }
+      }
+    } catch (err: any) {
+      if (side === "A") setInfoA("加载失败: " + err.message);
+      else setInfoB("加载失败: " + err.message);
+    }
+  }
+
+  // === 拖放上传 ===
+  function createDropHandlers(side: "A" | "B") {
+    return {
+      onClick: () => (side === "A" ? fileARef : fileBRef).current?.click(),
+      onDragOver: (e: React.DragEvent) => {
+        e.preventDefault();
+      },
+      onDragLeave: (e: React.DragEvent) => {
+        e.preventDefault();
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        const f = e.dataTransfer.files[0];
+        if (f) handleFile(f, side);
+      },
+    };
+  }
+
+  // === 重处理两张图（分辨率改变时） ===
+  function reprocessBoth() {
+    const size = resolution;
+    if (originalImgARef.current) {
+      imageADataRef.current = cropAndResize(originalImgARef.current, size);
+      setInfoA(`已处理: ${size}×${size} 像素`);
+    }
+    if (originalImgBRef.current) {
+      imageBDataRef.current = cropAndResize(originalImgBRef.current, size);
+      setInfoB(`已处理: ${size}×${size} 像素`);
+    }
+    if (imageADataRef.current && imageBDataRef.current) onBothReady();
+  }
+
+  // === 初始化：加载默认奶龙图片 ===
+  React.useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `像素变换-${Date.now()}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }, "image/png");
+    ctxRef.current = canvas.getContext("2d", { willReadFrequently: true });
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+
+    // 初始空画布
+    setCanvasSize(resolution);
+    ctx.fillStyle = "#0a0814";
+    ctx.fillRect(0, 0, resolution, resolution);
+
+    (async () => {
+      try {
+        const [imgA, imgB] = await Promise.all([
+          urlToImage(DEFAULT_SRC),
+          urlToImage(DEFAULT_DST),
+        ]);
+        originalImgARef.current = imgA;
+        originalImgBRef.current = imgB;
+        setThumbA(DEFAULT_SRC);
+        setThumbB(DEFAULT_DST);
+
+        const size = resolution;
+        imageADataRef.current = cropAndResize(imgA, size);
+        imageBDataRef.current = cropAndResize(imgB, size);
+        setInfoA(`已处理: ${size}×${size} 像素`);
+        setInfoB(`已处理: ${size}×${size} 像素`);
+        onBothReady();
+      } catch (e: any) {
+        setStatus("加载默认图片失败: " + (e?.message ?? e));
+        setStatusKind("idle");
+      }
+    })();
+  }, []);
+
+  // 控件变化处理
+  function onResolutionChange(v: number) {
+    setResolution(v);
+    if (isAnimatingRef.current) return;
+    reprocessBoth();
   }
 
-  function shuffleSeed() {
-    setGlitchSeed(Math.floor(Math.random() * 99999));
+  function onSortMethodChange(v: SortMethod) {
+    setSortMethod(v);
+    if (isAnimatingRef.current) return;
+    if (imageADataRef.current && imageBDataRef.current) {
+      processImages();
+      renderImageA();
+      setStatus("排序方式已更新");
+      setStatusKind("ready");
+    }
   }
+
+  function onTrailToggle() {
+    const next = !trailOn;
+    setTrailOn(next);
+    trailOnRef.current = next;
+    trailBufferRef.current = null;
+  }
+
+  function onBgImgAToggle() {
+    const next = !bgImgAOn;
+    setBgImgAOn(next);
+    bgImgAOnRef.current = next;
+    trailBufferRef.current = null;
+  }
+
+  // 窗口尺寸变化时刷新画布显示
+  React.useEffect(() => {
+    const handler = () => {
+      if (imageADataRef.current && !isAnimatingRef.current) {
+        setCanvasSize(imageADataRef.current.width);
+        ctxRef.current?.putImageData(imageADataRef.current, 0, 0);
+      }
+    };
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
 
   return (
-    <div className="pml-card p-4 md:p-6">
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* 画布 */}
-        <div className="flex-1">
+    <div className="psm-layout">
+      {/* 左：上传面板 */}
+      <div className="psm-left">
+        <div className="psm-upload-panel">
+          <h3>图片 A（源）</h3>
           <div
-            className="relative w-full aspect-square rounded-lg overflow-hidden"
-            style={{
-              background:
-                "repeating-conic-gradient(#e7e2d8 0% 25%, #f3efe9 0% 50%) 50% / 16px 16px",
-            }}
+            className={`psm-upload-zone ${thumbA ? "has-image" : ""}`}
+            {...createDropHandlers("A")}
           >
-            <canvas
-              ref={canvasRef}
-              className="w-full h-full object-contain"
-              style={{ imageRendering: "auto" }}
-            />
-            {running && (
-              <div className="absolute top-2 right-2 text-xs px-2 py-1 rounded-full bg-black/70 text-white flex items-center gap-1">
-                <Loader2 className="h-3 w-3 animate-spin" /> 处理中
+            {thumbA ? (
+              <img src={thumbA} alt="图片 A" />
+            ) : (
+              <div className="psm-placeholder">
+                <span className="icon">🖼️</span>
+                <span>点击或拖拽上传</span>
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-3 flex-wrap">
-            <Button
-              onClick={() => render()}
-              size="sm"
-              style={{
-                background: "var(--pml-accent)",
-                color: "var(--pml-accent-fg)",
-              }}
-            >
-              <Shuffle className="h-3.5 w-3.5 mr-1.5" /> 重新渲染
-            </Button>
-            <Button onClick={downloadCanvas} size="sm" variant="outline">
-              <Download className="h-3.5 w-3.5 mr-1.5" /> 下载 PNG
-            </Button>
-            <div className="flex items-center gap-2 ml-auto">
-              <span className="text-xs text-[var(--pml-prose-muted)]">自动运行</span>
-              <Switch checked={autoRun} onCheckedChange={setAutoRun} />
-            </div>
-          </div>
-          {error && (
-            <div className="mt-3 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 dark:text-red-400 p-2 rounded">
-              {error}
-            </div>
-          )}
+          <label
+            className="psm-file-btn"
+            onClick={() => fileARef.current?.click()}
+          >
+            选择图片 A
+          </label>
+          <input
+            ref={fileARef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleFile(f, "A");
+            }}
+          />
+          <div className="psm-info">{infoA}</div>
         </div>
 
-        {/* 控件 */}
-        <div className="lg:w-[340px] flex flex-col gap-4">
-          <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
-            <TabsList className="grid grid-cols-4 w-full">
-              <TabsTrigger value="sort">像素排序</TabsTrigger>
-              <TabsTrigger value="morph">形变</TabsTrigger>
-              <TabsTrigger value="glitch">故障</TabsTrigger>
-              <TabsTrigger value="pipeline">流水线</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          {/* 图片输入 */}
-          <div className="grid grid-cols-2 gap-2">
-            <ImageBox
-              label="源图"
-              name={srcName}
-              url={srcUrl}
-              onPick={() => srcInputRef.current?.click()}
-            />
-            <ImageBox
-              label="目标图"
-              name={dstName}
-              url={dstUrl}
-              onPick={() => dstInputRef.current?.click()}
-            />
-            <input
-              ref={srcInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onUploadSrc(f);
-              }}
-            />
-            <input
-              ref={dstInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onUploadDst(f);
-              }}
-            />
-          </div>
-          <p className="text-[11px] text-[var(--pml-prose-muted)] -mt-2">
-            默认示例为奶龙 idle_40 → laugh_10，点击上方卡片可上传自定义 PNG / JPG。
-          </p>
-
-          {/* 排序控件 */}
-          {(mode === "sort" || mode === "pipeline") && (
-            <div className="space-y-3 pml-card p-3">
-              <SectionLabel>像素排序</SectionLabel>
-              <Row>
-                <label className="text-xs text-[var(--pml-prose-muted)]">方向</label>
-                <Select value={sortDir} onValueChange={(v) => setSortDir(v as SortDirection)}>
-                  <SelectTrigger className="h-8 w-32 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="horizontal">水平</SelectItem>
-                    <SelectItem value="vertical">垂直</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Row>
-              <Row>
-                <label className="text-xs text-[var(--pml-prose-muted)]">指标</label>
-                <Select value={sortMetric} onValueChange={(v) => setSortMetric(v as SortMetric)}>
-                  <SelectTrigger className="h-8 w-32 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="brightness">亮度</SelectItem>
-                    <SelectItem value="hue">色相</SelectItem>
-                    <SelectItem value="saturation">饱和度</SelectItem>
-                    <SelectItem value="red">红</SelectItem>
-                    <SelectItem value="green">绿</SelectItem>
-                    <SelectItem value="blue">蓝</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Row>
-              <SliderRow
-                label="阈值"
-                value={sortThreshold}
-                min={0}
-                max={255}
-                step={1}
-                onChange={setSortThreshold}
-              />
-              <Row>
-                <label className="text-xs text-[var(--pml-prose-muted)]">排序范围</label>
-                <Select
-                  value={sortThresholdMode}
-                  onValueChange={(v) => setSortThresholdMode(v as "above" | "below")}
-                >
-                  <SelectTrigger className="h-8 w-32 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="above">高于阈值</SelectItem>
-                    <SelectItem value="below">低于阈值</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Row>
-              <SliderRow
-                label="强度"
-                value={Math.round(sortIntensity * 100)}
-                min={0}
-                max={100}
-                step={1}
-                onChange={(v) => setSortIntensity(v / 100)}
-                suffix="%"
-              />
-            </div>
-          )}
-
-          {/* 形变控件 */}
-          {(mode === "morph" || mode === "pipeline") && (
-            <div className="space-y-3 pml-card p-3">
-              <SectionLabel>形变（交叉溶解）</SectionLabel>
-              <SliderRow
-                label="强度"
-                value={Math.round(morphAmount * 100)}
-                min={0}
-                max={100}
-                step={1}
-                onChange={(v) => setMorphAmount(v / 100)}
-                suffix="%"
-              />
-              <Row>
-                <label className="text-xs text-[var(--pml-prose-muted)]">缓动</label>
-                <Select value={morphEase} onValueChange={(v) => setMorphEase(v as any)}>
-                  <SelectTrigger className="h-8 w-32 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="linear">线性</SelectItem>
-                    <SelectItem value="easeinout">缓入缓出</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Row>
-            </div>
-          )}
-
-          {/* 故障控件 */}
-          {(mode === "glitch" || mode === "pipeline") && (
-            <div className="space-y-3 pml-card p-3">
-              <SectionLabel>故障（块位移）</SectionLabel>
-              <SliderRow
-                label="强度"
-                value={Math.round(glitchAmount * 100)}
-                min={0}
-                max={100}
-                step={1}
-                onChange={(v) => setGlitchAmount(v / 100)}
-                suffix="%"
-              />
-              <SliderRow
-                label="块数量"
-                value={glitchBlocks}
-                min={1}
-                max={60}
-                step={1}
-                onChange={setGlitchBlocks}
-              />
-              <Row>
-                <label className="text-xs text-[var(--pml-prose-muted)]">种子</label>
-                <div className="flex gap-1 items-center">
-                  <input
-                    type="number"
-                    value={glitchSeed}
-                    onChange={(e) => setGlitchSeed(Number(e.target.value) || 0)}
-                    className="h-8 w-20 text-xs bg-transparent border rounded px-2"
-                    style={{ borderColor: "var(--pml-border)" }}
-                  />
-                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={shuffleSeed}>
-                    <Shuffle className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </Row>
-            </div>
-          )}
-
-          {mode === "pipeline" && (
-            <div className="pml-card p-3 flex items-center justify-between">
-              <div>
-                <SectionLabel>流水线顺序</SectionLabel>
-                <p className="text-[11px] text-[var(--pml-prose-muted)] mt-0.5">
-                  打开则在形变前先执行像素排序
-                </p>
+        <div className="psm-upload-panel">
+          <h3>图片 B（目标）</h3>
+          <div
+            className={`psm-upload-zone ${thumbB ? "has-image" : ""}`}
+            {...createDropHandlers("B")}
+          >
+            {thumbB ? (
+              <img src={thumbB} alt="图片 B" />
+            ) : (
+              <div className="psm-placeholder">
+                <span className="icon">🖼️</span>
+                <span>点击或拖拽上传</span>
               </div>
-              <Switch checked={pipelineSortFirst} onCheckedChange={setPipelineSortFirst} />
-            </div>
-          )}
+            )}
+          </div>
+          <label
+            className="psm-file-btn"
+            onClick={() => fileBRef.current?.click()}
+          >
+            选择图片 B
+          </label>
+          <input
+            ref={fileBRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleFile(f, "B");
+            }}
+          />
+          <div className="psm-info">{infoB}</div>
+        </div>
+
+        <div className="psm-default-hint">
+          默认已加载奶龙 <code>idle_40.png</code> → <code>laugh_10.png</code>，可直接点击"开始变换"，或上传自定义图。
+        </div>
+      </div>
+
+      {/* 右：画布 + 控件 */}
+      <div className="psm-right">
+        <div className="psm-canvas-wrapper">
+          <canvas
+            ref={canvasRef}
+            width={resolution}
+            height={resolution}
+            className="psm-canvas"
+          />
+        </div>
+        <div className={`psm-status psm-status-${statusKind}`}>{status}</div>
+        <div className="psm-controls">
+          <div className="psm-control-group">
+            <label>分辨率</label>
+            <input
+              type="range"
+              min={50}
+              max={250}
+              step={10}
+              value={resolution}
+              onChange={(e) => onResolutionChange(parseInt(e.target.value))}
+            />
+            <span className="psm-range-value">
+              {resolution}×{resolution}
+            </span>
+          </div>
+
+          <div className="psm-control-group">
+            <label>排序依据</label>
+            <select
+              value={sortMethod}
+              onChange={(e) => onSortMethodChange(e.target.value as SortMethod)}
+            >
+              <option value="luminance">明度</option>
+              <option value="saturation">饱和度</option>
+              <option value="hue">色相</option>
+              <option value="red">红色通道</option>
+              <option value="green">绿色通道</option>
+              <option value="blue">蓝色通道</option>
+            </select>
+          </div>
+
+          <div className="psm-control-group">
+            <label>动画时长</label>
+            <select
+              value={duration}
+              onChange={(e) => setDuration(parseInt(e.target.value))}
+            >
+              <option value={1500}>1.5 秒</option>
+              <option value={2500}>2.5 秒</option>
+              <option value={4000}>4 秒</option>
+              <option value={6000}>6 秒</option>
+            </select>
+          </div>
+
+          <button
+            className={`psm-btn psm-btn-toggle ${trailOn ? "active" : ""}`}
+            onClick={onTrailToggle}
+          >
+            ✨ 拖尾效果
+          </button>
+          <button
+            className={`psm-btn psm-btn-toggle ${bgImgAOn ? "active" : ""}`}
+            onClick={onBgImgAToggle}
+          >
+            🖼️ 背景图A
+          </button>
+          <button
+            className="psm-btn psm-btn-transform"
+            onClick={startAnimation}
+            disabled={isAnimatingRef.current || !sortedARef.current}
+          >
+            ⟳ 开始变换
+          </button>
+          <button
+            className="psm-btn psm-btn-reset"
+            onClick={resetToA}
+            disabled={isAnimatingRef.current}
+          >
+            ↺ 重置
+          </button>
         </div>
       </div>
     </div>
   );
-}
-
-function ImageBox({
-  label,
-  name,
-  url,
-  onPick,
-}: {
-  label: string;
-  name: string;
-  url: string;
-  onPick: () => void;
-}) {
-  return (
-    <button
-      onClick={onPick}
-      className="pml-card p-2 text-left hover:shadow-md transition-shadow group"
-      style={{ borderColor: "var(--pml-border)" }}
-    >
-      <div className="text-[10px] uppercase tracking-wide text-[var(--pml-prose-muted)]">
-        {label}
-      </div>
-      <div
-        className="mt-1 aspect-square w-full rounded bg-[var(--pml-muted)] flex items-center justify-center overflow-hidden"
-      >
-        <img src={url} alt={name} className="w-full h-full object-contain" />
-      </div>
-      <div className="mt-1 text-[10px] font-mono text-[var(--pml-prose)] truncate flex items-center gap-1">
-        <Upload className="h-2.5 w-2.5 inline-block opacity-50 group-hover:opacity-100" />
-        {name}
-      </div>
-    </button>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--pml-accent)]">
-      {children}
-    </div>
-  );
-}
-
-function Row({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-2">{children}</div>
-  );
-}
-
-function SliderRow({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  suffix,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (v: number) => void;
-  suffix?: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <label className="text-xs text-[var(--pml-prose-muted)]">{label}</label>
-        <span className="text-xs font-mono text-[var(--pml-prose)]">
-          {value}
-          {suffix ?? ""}
-        </span>
-      </div>
-      <Slider
-        value={[value]}
-        min={min}
-        max={max}
-        step={step}
-        onValueChange={(arr) => onChange(arr[0])}
-        className="pml-slider"
-      />
-    </div>
-  );
-}
-
-function resizeBuffer(buf: RGBABuffer, w: number, h: number): RGBABuffer {
-  if (typeof document === "undefined") return buf;
-  const canvas = document.createElement("canvas");
-  canvas.width = buf.width;
-  canvas.height = buf.height;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-  const imgData = new ImageData(buf.data, buf.width, buf.height);
-  ctx.putImageData(imgData, 0, 0);
-  const out = document.createElement("canvas");
-  out.width = w;
-  out.height = h;
-  const octx = out.getContext("2d", { willReadFrequently: true })!;
-  octx.imageSmoothingEnabled = true;
-  octx.drawImage(canvas, 0, 0, w, h);
-  return { data: octx.getImageData(0, 0, w, h).data, width: w, height: h };
 }

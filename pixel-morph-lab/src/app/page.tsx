@@ -5,52 +5,16 @@ import { PixelTransformDemo } from "@/components/pixel-transform-demo";
 
 export default function Home() {
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <header
-        className="border-b"
-        style={{
-          borderColor: "var(--pml-border)",
-          background: "var(--pml-card)",
-        }}
-      >
-        <div className="max-w-5xl mx-auto px-4 md:px-6 h-14 flex items-center gap-3">
-          <span
-            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-white text-xs font-bold"
-            style={{
-              background:
-                "linear-gradient(135deg, var(--pml-accent), #6366f1)",
-            }}
-          >
-            PM
-          </span>
-          <span className="font-serif text-base font-semibold tracking-tight">
-            奶龙像素变换
-          </span>
-          <span
-            className="text-xs text-[var(--pml-prose-muted)] font-mono ml-1"
-          >
-            Nailong Pixel Morph
-          </span>
-          <span className="ml-auto text-xs text-[var(--pml-prose-muted)]">
-            默认示例：idle_40 → laugh_10
-          </span>
-        </div>
+    <div className="psm-page">
+      <header className="psm-header">
+        <h1>Pixel Sort Morph</h1>
+        <p>上传两张图片 — 用像素排序的方式将第一张图的像素重新排列，拼出第二张图</p>
       </header>
 
-      <main className="flex-1 py-6 md:py-10">
-        <div className="max-w-5xl mx-auto px-4 md:px-6">
-          <PixelTransformDemo />
-        </div>
-      </main>
+      <PixelTransformDemo />
 
-      <footer
-        className="mt-auto border-t py-3 text-center text-xs text-[var(--pml-prose-muted)]"
-        style={{
-          borderColor: "var(--pml-border)",
-          background: "var(--pml-muted)",
-        }}
-      >
-        © {new Date().getFullYear()} 奶龙像素变换 · 基于 Next.js + Canvas API 构建
+      <footer className="psm-footer">
+        默认已加载奶龙 idle_40 → laugh_10 · 也可上传自定义图
       </footer>
     </div>
   );

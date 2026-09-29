@@ -28,23 +28,22 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "奶龙像素变换 · Nailong Pixel Morph",
+  title: "像素排序变换 · Pixel Sort Morph",
   description:
-    "一个简单的图片像素变换工具，默认演示奶龙 idle_40 → laugh_10 的转换，也支持自定义图片上传。",
+    "上传两张图片 — 用像素排序的方式将第一张图的像素重新排列，拼出第二张图。默认加载奶龙 idle_40 → laugh_10。",
   keywords: [
-    "奶龙",
-    "像素变换",
-    "图片变换",
+    "像素排序",
     "pixel sort",
     "image morph",
+    "奶龙",
     "canvas",
     "Next.js",
   ],
-  authors: [{ name: "奶龙像素变换" }],
+  authors: [{ name: "Pixel Sort Morph" }],
   icons: { icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg" },
   openGraph: {
-    title: "奶龙像素变换",
-    description: "简单的图片像素变换工具，默认演示奶龙 idle_40 → laugh_10。",
+    title: "像素排序变换 · Pixel Sort Morph",
+    description: "上传两张图片，用像素排序的方式把第一张图的像素重新排列拼出第二张图。",
     type: "website",
   },
 };
